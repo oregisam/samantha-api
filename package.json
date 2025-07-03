@@ -1,0 +1,29 @@
+{
+  "name": "nuvemshop-whatsapp-bot",
+  "version": "1.0.0",
+  "description": "Bot de notificações do WhatsApp para Nuvemshop com fila no MongoDB",
+  "main": "bot.js",
+  "scripts": {
+    "start:web": "node server.js",
+    "start:worker": "node bot.js",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "keywords": [
+    "whatsapp",
+    "nuvemshop",
+    "baileys",
+    "mongodb"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "mongoose": "^8.16.1",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

@@ -1,0 +1,8 @@
+# Dependências
+node_modules
+
+# Arquivo de variáveis de ambiente
+.env
+
+# Pasta de autenticação local do Baileys
+baileys_auth
