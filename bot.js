@@ -14,18 +14,27 @@ const NotificationQueue = require('./models/notificationQueue');
 
 const AUTH_DIR = path.join(__dirname, 'baileys_auth');
 let sock = null;
+let debounceTimeout = null; // <- MUDANÇA 1: Variável para o Debounce
 
 // --- LÓGICA DE BACKUP DA SESSÃO ---
 async function uploadSession() {
   try {
     const files = await fs.readdir(AUTH_DIR);
     for (const file of files) {
-      const data = await fs.readFile(path.join(AUTH_DIR, file));
-      await SessionFile.findOneAndUpdate({ filename: file }, { data }, { upsert: true });
+      try { // <- MUDANÇA 2: Bloco try/catch para cada arquivo
+        const data = await fs.readFile(path.join(AUTH_DIR, file));
+        await SessionFile.findOneAndUpdate({ filename: file }, { data }, { upsert: true });
+      } catch (error) {
+        // Se o erro for 'ENOENT', significa que o arquivo foi deletado. Apenas ignoramos.
+        if (error.code !== 'ENOENT') {
+          console.error(`❌ Erro ao fazer backup do arquivo ${file}:`, error);
+        }
+      }
     }
-    console.log('🔄 Backup da sessão realizado no MongoDB.');
+    console.log('🔄 Backup da sessão (debounce) realizado no MongoDB.');
   } catch (error) {
-    console.error('❌ Erro no backup da sessão:', error);
+    // Erro ao ler o diretório principal
+    console.error('❌ Erro no processo de backup da sessão:', error);
   }
 }
 
@@ -57,7 +66,9 @@ async function connectToWhatsApp() {
 
   sock.ev.on('creds.update', async () => {
     await saveCreds();
-    await uploadSession();
+    // MUDANÇA 1: Lógica de Debounce
+    clearTimeout(debounceTimeout); // Cancela o backup anterior se um novo update chegar
+    debounceTimeout = setTimeout(uploadSession, 5000); // Agenda um novo backup para 5 segundos no futuro
   });
 
   sock.ev.on('connection.update', (update) => {
@@ -80,7 +91,7 @@ async function processQueue() {
     const job = await NotificationQueue.findOneAndUpdate(
       { status: 'pending' },
       { $set: { status: 'processing', processedAt: new Date() } },
-      { sort: { createdAt: 1 } } // Pega o mais antigo primeiro
+      { sort: { createdAt: 1 } }
     );
 
     if (job) {
@@ -94,7 +105,6 @@ async function processQueue() {
         await NotificationQueue.updateOne({ _id: job._id }, { status: 'failed', error: error.message });
       }
     } else {
-      // Se não houver jobs, espera 5 segundos antes de verificar novamente
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
@@ -115,12 +125,14 @@ async function handleOrderEvent(event, orderData) {
     case 'order/paid':
       message = `Olá, ${customerName}! 🎉 Pagamento do seu pedido #${orderData.id} confirmado! Já estamos preparando tudo para o envio.`;
       break;
-    case 'order/shipped':
+    case 'order/fulfilled': // Evento corrigido
       const trackingNumber = orderData.shipping_tracking_number || 'não disponível';
       const trackingUrl = orderData.shipping_tracking_url || '';
       message = `Olá, ${customerName}! 🚚 Boas notícias! Seu pedido #${orderData.id} foi enviado.\n\nCódigo de rastreio: ${trackingNumber}\nAcompanhe aqui: ${trackingUrl}`;
       break;
-    // Adicione outros casos aqui (order/delivered, order/canceled, etc.)
+    case 'order/cancelled': // Evento corrigido
+        message = `Olá, ${customerName}. Gostaríamos de informar que seu pedido #${orderData.id} foi cancelado. Se tiver alguma dúvida, entre em contato conosco.`;
+        break;
   }
 
   if (message) {
