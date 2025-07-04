@@ -113,7 +113,7 @@ async function processQueue() {
   }
 }
 
-// --- LÓGICA DA MENSAGEM ---
+// --- LÓGICA DA MENSAGEM (VERSÃO MELHORADA) ---
 async function handleOrderEvent(webhookPayload) {
   if (!sock) throw new Error("Socket do WhatsApp não está pronto.");
 
@@ -149,19 +149,21 @@ async function handleOrderEvent(webhookPayload) {
   const customerName = customer.name.split(' ')[0];
   let message = '';
 
-  // 3. Montar a mensagem com base no evento original do webhook
+  // 3. Montar a mensagem com base no evento original do webhook (NOVAS MENSAGENS)
   switch (event) {
     case 'order/paid':
-      message = `Olá, ${customerName}! 🎉 Pagamento do seu pedido #${orderData.number} confirmado! Já estamos preparando tudo para o envio.`;
+      message = `Olá, ${customerName}! 💖\n\nSeu pagamento do pedido #${orderData.number} foi confirmado com sucesso! ✨\n\nJá estamos separando suas peças maravilhosas da Samantha Fashion com todo o carinho. Em breve, elas estarão a caminho!\n\nCom amor,\nEquipe Samantha Fashion 🛍️`;
       break;
+      
     case 'order/fulfilled':
       const trackingNumber = orderData.shipping_tracking_number || 'não disponível';
       const trackingUrl = orderData.shipping_tracking_url || '';
-      message = `Olá, ${customerName}! 🚚 Boas notícias! Seu pedido #${orderData.number} foi enviado.\n\nCódigo de rastreio: ${trackingNumber}\nAcompanhe aqui: ${trackingUrl}`;
+      message = `Oba, ${customerName}! 🎀\n\nSua comprinha da Samantha Fashion já está a caminho! 🚚💨\n\nSeu pedido #${orderData.number} foi enviado e você pode acompanhá-lo por aqui:\n\n*Código de Rastreio:* ${trackingNumber}\n*Link:* ${trackingUrl}\n\nMal podemos esperar para ver você arrasando com seus novos looks! 👗✨`;
       break;
+      
     case 'order/cancelled':
-        message = `Olá, ${customerName}. Gostaríamos de informar que seu pedido #${orderData.number} foi cancelado. Se tiver alguma dúvida, entre em contato conosco.`;
-        break;
+      message = `Olá, ${customerName}. 🌸\n\nPassando para avisar que o seu pedido #${orderData.number} da Samantha Fashion foi cancelado.\n\nSe tiver qualquer dúvida ou se precisar de ajuda para fazer um novo pedido, estamos à sua disposição!\n\nCom carinho,\nEquipe Samantha Fashion 🛍️`;
+      break;
   }
 
   // 4. Enviar a mensagem para o WhatsApp
