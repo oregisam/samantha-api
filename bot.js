@@ -1,28 +1,25 @@
-// bot.js (com inicialização sincronizada)
+// bot.js (versão completa com QR Code na web)
 require('dotenv').config();
 const path = require('path');
 const fs = require('fs/promises');
 const axios = require('axios');
+const qrcode = require('qrcode'); // Usamos a biblioteca 'qrcode' para gerar a imagem
 const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
-const qrcode = require('qrcode-terminal');
 const connectDB = require('./db');
 const SessionFile = require('./models/sessionFile');
 const NotificationQueue = require('./models/notificationQueue');
+const BotStatus = require('./models/botStatus'); // Importamos o novo modelo de status
 
 const AUTH_DIR = path.join(__dirname, 'baileys_auth');
 let sock = null;
 let debounceTimeout = null;
 
-// --- LÓGICA DE BACKUP DA SESSÃO (sem alterações) ---
-async function uploadSession() { /* ...código anterior sem alterações... */ }
-async function downloadSession() { /* ...código anterior sem alterações... */ }
-
-// Copiando as funções completas para clareza
+// --- LÓGICA DE BACKUP DA SESSÃO ---
 async function uploadSession() {
   try {
     const files = await fs.readdir(AUTH_DIR);
@@ -31,7 +28,9 @@ async function uploadSession() {
         const data = await fs.readFile(path.join(AUTH_DIR, file));
         await SessionFile.findOneAndUpdate({ filename: file }, { data }, { upsert: true });
       } catch (error) {
-        if (error.code !== 'ENOENT') console.error(`❌ Erro ao fazer backup do arquivo ${file}:`, error);
+        if (error.code !== 'ENOENT') {
+          console.error(`❌ Erro ao fazer backup do arquivo ${file}:`, error);
+        }
       }
     }
     console.log('🔄 Backup da sessão (debounce) realizado no MongoDB.');
@@ -59,12 +58,8 @@ async function downloadSession() {
   }
 }
 
-
-// =========================================================================
-// ### MUDANÇA NA LÓGICA DE CONEXÃO DO WHATSAPP ###
-// =========================================================================
+// --- LÓGICA DE CONEXÃO DO WHATSAPP ---
 function connectToWhatsApp() {
-  // Envolvemos a lógica em uma Promise para poder "esperar" (await) por ela
   return new Promise(async (resolve, reject) => {
     console.log('Iniciando conexão com o WhatsApp...');
     await downloadSession();
@@ -72,7 +67,8 @@ function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version } = await fetchLatestBaileysVersion();
     
-    sock = makeWASocket({ version, auth: state, printQRInTerminal: true, browser: ['Nuvemshop-BOT', 'Chrome', '1.0'] });
+    // Removemos a opção 'printQRInTerminal'
+    sock = makeWASocket({ version, auth: state, browser: ['Samantha-Fashion-BOT', 'Chrome', '1.0'] });
 
     sock.ev.on('creds.update', async () => {
       await saveCreds();
@@ -80,33 +76,55 @@ function connectToWhatsApp() {
       debounceTimeout = setTimeout(uploadSession, 5000);
     });
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
-      if (qr) qrcode.generate(qr, { small: true });
+      
+      if (qr) {
+        console.log('📱 QR Code recebido. Gerando imagem para a página web...');
+        try {
+          const qrImage = await qrcode.toDataURL(qr);
+          await BotStatus.findOneAndUpdate(
+            { singletonId: 'main_status' },
+            { status: 'WAITING_FOR_QR', qrCode: qrImage, lastUpdatedAt: new Date() },
+            { upsert: true }
+          );
+        } catch (e) {
+          console.error('❌ Falha ao gerar ou salvar QR Code', e);
+        }
+      }
+      
       if (connection === 'open') {
         console.log('✅ Conectado ao WhatsApp!');
-        resolve(sock); // A Promise é resolvida com sucesso aqui!
+        await BotStatus.findOneAndUpdate(
+          { singletonId: 'main_status' },
+          { status: 'CONNECTED', qrCode: '', lastUpdatedAt: new Date() },
+          { upsert: true }
+        );
+        resolve(sock);
       }
+      
       if (connection === 'close') {
         const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
         console.log(`🔌 Conexão fechada. Reconectando: ${shouldReconnect}`);
+        await BotStatus.findOneAndUpdate(
+          { singletonId: 'main_status' },
+          { status: 'DISCONNECTED', qrCode: '', lastUpdatedAt: new Date() },
+          { upsert: true }
+        );
+
         if (shouldReconnect) {
           setTimeout(connectToWhatsApp, 5000);
         } else {
-          const err = new Error('❌ Logout forçado. Delete os dados da sessão no MongoDB para gerar um novo QR Code.');
+          const err = new Error('❌ Logout forçado. Delete a sessão no DB e acesse a página /status para um novo QR Code.');
           console.error(err);
-          reject(err); // A Promise é rejeitada em caso de falha crítica
+          reject(err);
         }
       }
     });
   });
 }
 
-
-// --- LÓGICA DE PROCESSAMENTO DA FILA (sem alterações) ---
-async function processQueue() { /* ...código anterior sem alterações... */ }
-
-// Copiando a função completa para clareza
+// --- LÓGICA DE PROCESSAMENTO DA FILA ---
 async function processQueue() {
   console.log('📡 Iniciando processador de fila...');
   while (true) {
@@ -131,10 +149,7 @@ async function processQueue() {
   }
 }
 
-// --- LÓGICA DA MENSAGEM (sem alterações) ---
-async function handleOrderEvent(webhookPayload) { /* ...código anterior sem alterações... */ }
-
-// Copiando a função completa para clareza
+// --- LÓGICA DA MENSAGEM ---
 async function handleOrderEvent(webhookPayload) {
   if (!sock) throw new Error("Socket do WhatsApp não está pronto.");
   const { event, id: orderId } = webhookPayload;
@@ -176,18 +191,15 @@ async function handleOrderEvent(webhookPayload) {
   }
 }
 
-
-// =========================================================================
-// ### MUDANÇA NA LÓGICA DE INICIALIZAÇÃO ###
-// =========================================================================
+// --- INICIALIZAÇÃO ---
 async function start() {
   try {
     await connectDB();
-    await connectToWhatsApp(); // Agora esperamos a conexão ser estabelecida
-    processQueue();           // Só então iniciamos o processador da fila
+    await connectToWhatsApp();
+    processQueue();
   } catch (error) {
     console.error("❌ Falha crítica na inicialização, o bot não será iniciado:", error);
-    process.exit(1); // Encerra o processo em caso de falha crítica de inicialização
+    process.exit(1);
   }
 }
 
