@@ -1,9 +1,9 @@
-// server.js (com página de status do QR Code)
+// server.js (com correção do favicon)
 require('dotenv').config();
 const express = require('express');
 const connectDB = require('./db');
 const NotificationQueue = require('./models/notificationQueue');
-const BotStatus = require('./models/botStatus'); // Importamos o novo modelo
+const BotStatus = require('./models/botStatus');
 
 connectDB();
 const app = express();
@@ -11,7 +11,16 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 
-// ### NOVA ROTA PARA EXIBIR O STATUS E O QR CODE ###
+app.get('/', (req, res) => {
+  res.send('Servidor de Webhooks para Nuvemshop está ATIVO.');
+});
+
+// ================== NOVA ROTA PARA FAVICON ==================
+// Impede que o navegador mostre um erro de "ícone não encontrado"
+app.get('/favicon.ico', (req, res) => res.status(204).send());
+// ==========================================================
+
+// Rota para exibir o status e o QR Code
 app.get('/status', async (req, res) => {
   res.setHeader('Content-Type', 'text/html');
   
@@ -38,7 +47,6 @@ app.get('/status', async (req, res) => {
       }
     }
 
-    // Página HTML que se atualiza a cada 10 segundos
     res.send(`
       <!DOCTYPE html>
       <html lang="pt-BR">
@@ -68,7 +76,7 @@ app.get('/status', async (req, res) => {
   }
 });
 
-// A rota de webhook continua a mesma, aqui usamos a validação INSEGURA para testes
+// A rota de webhook (versão insegura para testes)
 app.post('/webhook/nuvemshop', async (req, res) => {
   console.log('✅ Webhook recebido e aceito SEM VERIFICAÇÃO DE SEGURANÇA.');
   try {
